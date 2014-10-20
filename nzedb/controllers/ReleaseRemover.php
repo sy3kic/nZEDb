@@ -290,6 +290,9 @@ class ReleaseRemover
 			case 'codec':
 				$this->removeCodecPoster();
 				break;
+            case 'wmv':
+                $this->removeWMV();
+                break;
 			case '':
 				$this->removeBlacklist();
 				$this->removeBlacklistFiles();
@@ -304,6 +307,7 @@ class ReleaseRemover
 				$this->removeSize();
 				$this->removeHuge();
 				$this->removeCodecPoster();
+                $this->removeWMV();
 				break;
 			default:
 				$this->error = 'Wrong type: ' . $type;
@@ -765,7 +769,7 @@ class ReleaseRemover
 
 					$ftMatch = (nZEDb_RELEASE_SEARCH_TYPE == \ReleaseSearch::SPHINX
 						? sprintf('rse.query = "@(name,searchname) %s;limit=10000;maxmatches=10000;mode=any" AND', str_replace('|', ' ', str_replace('"', '', $regexMatch)))
-						: sprintf("MATCH (rs.name, rs.searchname) AGAINST ('%s') AND", str_replace('|', ' ', $regexMatch))
+						: sprintf("(MATCH (rs.name) AGAINST ('%1\$s') OR MATCH (rs.searchname) AGAINST ('%1\$s')) AND", str_replace('|', ' ', $regexMatch))
 					);
 				}
 
@@ -827,7 +831,11 @@ class ReleaseRemover
 					)
 				);
 
-				$join = (nZEDb_RELEASE_SEARCH_TYPE == \ReleaseSearch::SPHINX ? "INNER JOIN releases_se rse ON rse.id = r.id" : "INNER JOIN releasesearch rs ON rs.releaseid = r.id");
+				if ($opTypeName == 'Subject') {
+					$join = (nZEDb_RELEASE_SEARCH_TYPE == \ReleaseSearch::SPHINX ? 'INNER JOIN releases_se rse ON rse.id = r.id' : 'INNER JOIN releasesearch rs ON rs.releaseid = r.id');
+				} else {
+					$join = '';
+				}
 
 				$this->query = sprintf("
 							SELECT r.guid, r.searchname, r.id
@@ -922,6 +930,28 @@ class ReleaseRemover
 		}
 
 		return true;
+	}
+
+    /**
+	 * Remove releases that contain .wmv file, aka that spam poster.
+	 * Thanks to dizant from nZEDb forums for the sql query
+	 * @return bool
+	 */
+	protected function removeWMV()
+	{
+		$this->method = 'WMV';
+        $regex = sprintf("rf.name %s 'x264.*\.wmv$'", $this->regexp);
+		$this->query = sprintf(
+            "SELECT DISTINCT r.ID, r.searchname FROM releasefiles
+            rf INNER JOIN releases r ON (rf.releaseID = r.ID)
+            WHERE %s",
+            $regex
+		);
+
+		if ($this->checkSelectQuery() === false) {
+			return $this->returnError();
+		}
+		return $this->deleteReleases();
 	}
 
 	/**
@@ -1041,6 +1071,55 @@ class ReleaseRemover
 			$args[1] = $this->cleanSpaces($args[1]);
 			$args[2] = $this->cleanSpaces($args[2]);
 			switch ($args[0]) {
+				case 'categoryid':
+					switch ($args[1]) {
+						case 'equals':
+							return ' AND categoryID = ' . $args[2];
+						default:
+							break;
+					}
+					break;
+				case 'imdbid':
+					switch ($args[1]) {
+						case 'equals':
+							if ($args[2] === 'NULL') {
+								return ' AND imdbID IS NULL ';
+							}
+							else {
+								return ' AND imdbID = ' . $args[2];
+							}
+						default:
+							break;
+					}
+					break;
+				case 'nzbstatus':
+					switch ($args[1]) {
+						case 'equals':
+							return ' AND nzbstatus = ' . $args[2];
+						default:
+							break;
+					}
+					break;
+				case 'rageid':
+					switch ($args[1]) {
+						case 'equals':
+							return ' AND rageID = ' . $args[2];
+						default:
+							break;
+					}
+					break;
+				case 'totalpart':
+					switch ($args[1]) {
+						case 'equals':
+							return ' AND totalpart = ' . $args[2];
+						case 'bigger':
+							return ' AND totalpart > ' . $args[2];
+						case 'smaller':
+							return ' AND totalpart < ' . $args[2];
+						default:
+							break;
+					}
+					break;
 				case 'fromname':
 					switch ($args[1]) {
 						case 'equals':
